@@ -30,6 +30,7 @@ def generator0(Nphi, Ng, Nz):
     
     # Conditioning Augmentation
     musigma = Dense(2*Ng, input_shape=phi_t.shape)(phi_t)
+    musigma = LeakyReLU()(musigma)
     mu0 = Lambda(lambda x: x[:,0:Ng])(musigma)
     sigma0 = Lambda(lambda x: x[:,Ng:])(musigma)
     tmp = Multiply()([eps, sigma0])
@@ -53,7 +54,7 @@ def generator0(Nphi, Ng, Nz):
             x = BatchNormalization()(x)
             x = Activation('relu')(x)
         in_channels = out_channels
-    model = Model(inputs = [phi_t, eps, z], outputs = [x])
+    model = Model(inputs = [phi_t, eps, z], outputs = [x, musigma])
     return model
 
 def generator1(Nphi, Ng, Mg, Nres, imsize):
@@ -64,6 +65,7 @@ def generator1(Nphi, Ng, Mg, Nres, imsize):
     
     # Conditioning Augmentation
     musigma = Dense(2*Ng, input_shape=phi_t.shape)(phi_t)
+    musigma = LeakyReLU()(musigma)
     mu1 = Lambda(lambda x: x[:,0:Ng])(musigma)
     sigma1 = Lambda(lambda x: x[:,Ng:])(musigma)
     tmp = Multiply()([eps, sigma1])
@@ -115,7 +117,7 @@ def generator1(Nphi, Ng, Mg, Nres, imsize):
             x = Activation('relu')(x)
         in_channels = out_channels
     
-    model = Model(inputs = [phi_t, eps, x_img], outputs = [x])
+    model = Model(inputs = [phi_t, eps, x_img], outputs = [x, musigma])
     return model
 
 def discriminator(Nphi, Nd, Md, imsize, layerSeq):
@@ -155,40 +157,20 @@ def discriminator(Nphi, Nd, Md, imsize, layerSeq):
     
 eps = K.constant(np.random.multivariate_normal(np.zeros(Ng), np.identity(Ng), 1))
 z = K.constant(np.random.multivariate_normal(np.zeros(Nz), np.identity(Nz), 1))
-phi_t = K.constant(np.random.rand(1,1000))
+phi_t = K.constant(np.random.rand(1,Nphi))
 
 gen0 = generator0(Nphi, Ng, Nz)
 dc0 = discriminator(Nphi, Nd, Md, (64,64,3), [64, 128, 256, 512])
-y = gen0([phi_t, eps, z])
+gen1 = generator1(Nphi, Nd, Mg, Nres, (64, 64, 3))
+dc1 = discriminator(Nphi, Nd, Md, (256,256,3), [32, 64, 128, 256, 512, 512])
+
+y, musigma0 = gen0([phi_t, eps, z])
 yd = dc0([phi_t, y])
 print(y.shape, yd.shape)
-'''
-gen0 = generator0(Nphi, Ng, Nz)
-gen0.summary()
-gen1 = generator1(Nphi, Ng, Mg, Nres, (64,64,3))
-gen1.summary()
-y = gen0([phi_t, eps, z])
-y = gen1([phi_t, eps, y])
-print(y.shape)
-'''
-'''
-# Code for Discriminator Model
-# First we Downsample
-downSample0 = Sequential()
-layerSeq0 = [16, 32, 64, 128]
-in_channels = 3
-sz = 64
-for i in range(len(layerSeq0)):
-    out_channels = layerSeq0[i]
-    downSample0.add(Conv2D(out_channels, 4, strides=(2,2), input_shape=(sz,sz,in_channels)))
-    if i!=0:
-        downSample0.add(BatchNormalization())
-    downSample0.add(LeakyReLU())
-    sz /= 2
-downSample0.build(input_shape=(1,1,Nx))
-downSample0.summary()
-'''
-# Next, we concatenate with the text embedding
+y2, musigma2 = gen1([phi_t, eps, y])
+yd2 = dc1([phi_t, y2])
+print(y2.shape, yd2.shape)
+
 
 
 
