@@ -196,28 +196,28 @@ gen1 = generator1(Nphi, Nd, Mg, Nres, (64, 64, 3))
 dc1 = discriminator(Nphi, Nd, Md, (256,256,3), [32, 64, 128, 256, 512, 512])
 gan1 = GAN1(gen1, dc1, Nphi, Md, (64, 64, 3))
 '''
-x_real = K.constant(np.random.randint(0, 255, (1,64,64,3)), dtype='float')
+x_real = K.constant(np.random.randint(0, 255, (10,64,64,3)), dtype='float')
 phi_t = K.constant(np.random.rand(1,Nphi))
 
 epochs = 10
 for i in range(epochs):
-    eps = K.constant(np.random.multivariate_normal(np.zeros(Ng), np.identity(Ng), 1))
-    z = K.constant(np.random.multivariate_normal(np.zeros(Nz), np.identity(Nz), 1))
+    eps = K.constant(np.random.multivariate_normal(np.zeros(Ng), np.identity(Ng), 10))
+    z = K.constant(np.random.multivariate_normal(np.zeros(Nz), np.identity(Nz), 10))
     gen0.trainable = False
     dc0.trainable = True
     x_false, musigma = gen0([phi_t, eps, z])
     X = K.concatenate([x_real, x_false], axis = 0)
-    Phi_t = K.concatenate([phi_t, phi_t], axis=0)
-    loss = dc0.train_on_batch([Phi_t, X], K.constant([1, 0]))
+    Phi_t = K.concatenate([phi_t for i in range(20)], axis=0)
+    loss = dc0.train_on_batch([Phi_t, X], K.constant([1 for x in range(10)] + [0 for x in range(10)]))
     print((i+1), loss)
     gen0.trainable = True
     dc0.trainable = False
-    eps = K.constant(np.random.multivariate_normal(np.zeros(Ng), np.identity(Ng), 1))
-    z = K.constant(np.random.multivariate_normal(np.zeros(Nz), np.identity(Nz), 1))
-    loss = gan0.train_on_batch([phi_t, eps, z], [K.constant([0]), K.ones((1, 2*Ng))])
+    #eps = K.constant(np.random.multivariate_normal(np.zeros(Ng), np.identity(Ng), 20))
+    #z = K.constant(np.random.multivariate_normal(np.zeros(Nz), np.identity(Nz), 20))
+    loss = gan0.train_on_batch([Phi_t[:10,:], eps, z], [K.constant([1 for x in range(10)]), K.ones((10, 2*Ng))])
     print((i+1), loss)
     
-y = dc0([phi_t, x_real])
+y = dc0([Phi_t[:10,:], x_real])
 print(K.get_value(y))
 
 
