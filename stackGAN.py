@@ -34,7 +34,8 @@ def generator0(Nphi, Ng, Nz):
     musigma = Dense(2*Ng, input_shape=phi_t.shape)(phi_t)
     musigma = LeakyReLU()(musigma)
     mu0 = Lambda(lambda x: x[:,0:Ng])(musigma)
-    sigma0 = (Lambda(lambda x: x[:,Ng:])(musigma))
+    sigma0 = (Lambda(lambda x: x[:,Ng:])(musigma)) #logsigma
+    sigma0 = Activation('exponential')(sigma0)
     tmp = Multiply()([eps, sigma0])
     c0 = Add()([mu0,tmp])
     
@@ -69,7 +70,8 @@ def generator1(Nphi, Ng, Mg, Nres, imsize):
     musigma = Dense(2*Ng, input_shape=phi_t.shape)(phi_t)
     musigma = LeakyReLU()(musigma)
     mu1 = Lambda(lambda x: x[:,0:Ng])(musigma)
-    sigma1 = (Lambda(lambda x: x[:,Ng:])(musigma))
+    sigma1 = (Lambda(lambda x: x[:,Ng:])(musigma)) # logsigma
+    sigma1 = Activation('exponential')(sigma1)
     tmp = Multiply()([eps, sigma1])
     c1 = Add()([mu1,tmp])
     
@@ -176,22 +178,22 @@ def GAN1(gen, disc, Nphi, Nd, imsize):
     model= Model(inputs=[phi_t, eps, x_img], outputs=[isValid, musigma])
     return model
 
-def KL_loss(musigma, y_dummy):
+def KL_loss(y_dummy, musigma):
     mu = musigma[:,:Ng]
-    sigma = musigma[:,Ng:]
-    loss = K.log(sigma) + 0.5 * (-1 + K.square(sigma) + K.square(mu))
+    logsigma = musigma[:,Ng:]
+    loss = logsigma + 0.5 * (-1 + K.exp(2*logsigma) + K.square(mu))
     loss = K.mean(loss)
     return loss
     
 
-dis_optimizer = Adam(lr=0.1, beta_1=0.5, beta_2=0.999)
-gen_optimizer = Adam(lr=0.1, beta_1=0.5, beta_2=0.999)
+dis_optimizer = Adam(lr=0.0002, beta_1=0.5)
+gen_optimizer = Adam(lr=0.0002, beta_1=0.5)
 gen0 = generator0(Nphi, Ng, Nz)
-gen0.compile(gen_optimizer, loss='mse')
+#gen0.compile(gen_optimizer, loss='mse')
 dc0 = discriminator(Nphi, Nd, Md, (64,64,3), [64, 128, 256, 512])
 dc0.compile(dis_optimizer, loss='binary_crossentropy')
 gan0 = GAN0(gen0, dc0, Nphi, Ng, Nz)
-gan0.compile(gen_optimizer, loss=['binary_crossentropy', KL_loss], loss_weights=[1, 1], metrics=None)
+gan0.compile(gen_optimizer, loss=['binary_crossentropy', KL_loss], loss_weights=[1,1], metrics=None)
 
 '''
 gen1 = generator1(Nphi, Nd, Mg, Nres, (64, 64, 3))
@@ -208,23 +210,29 @@ phi_t = K.constant(np.random.rand(128,Nphi))
 
 batch_size = int(tuple(x_real.shape)[0])
 epochs = 10
+
 for i in range(epochs):
     batch_size = int(tuple(x_real.shape)[0])
     d_batch_size = batch_size << 1
+    musigma_dummy = K.ones((batch_size,2*Ng))
+    real_labels = K.ones((batch_size,1))
+    false_labels = K.zeros((batch_size,1))
     eps = K.constant(np.random.normal(0, 1, [batch_size, Ng]))
     z = K.constant(np.random.normal(0, 1, [batch_size, Nz]))
     x_false, musigma = gen0([phi_t, eps, z])
+    #print(K.get_value(K.mean(musigma, axis=1)))
     #eps = np.random.multivariate_normal(np.zeros(Ng), np.identity(Ng), batch_size)
     #z = np.random.multivariate_normal(np.zeros(Nz), np.identity(Nz), batch_size)
     #x_false, musigma = gen0.predict([phi_t, eps, z])
     X = K.concatenate([x_real, x_false], axis = 0)
     Phi_t = K.concatenate([phi_t, phi_t], axis=0)
-    loss = dc0.train_on_batch([Phi_t, X], [K.concatenate([K.ones((batch_size,1)), K.zeros((batch_size,1))], axis=0)])
+    loss = dc0.train_on_batch([Phi_t, X], [K.concatenate([real_labels, false_labels], axis=0)])
     print((i+1), loss)
     #X = np.concatenate([x_real, x_false], axis = 0)
     #Phi_t = np.concatenate([phi_t, phi_t], axis=0)
     #dc0.fit([Phi_t, X], [np.concatenate([np.ones((batch_size,1)), np.zeros((batch_size,1))])], d_batch_size)
-    loss = gan0.train_on_batch([Phi_t[:batch_size, :], eps, z], [K.ones((batch_size,1)), K.ones((batch_size,2*Ng))])
+    _, musigma =  gan0([phi_t, eps, z])
+    loss = gan0.train_on_batch([phi_t, eps, z], [real_labels, musigma_dummy])
     print((i+1), loss)
     #eps = K.constant(np.random.multivariate_normal(np.zeros(Ng), np.identity(Ng), 20))
     #z = K.constant(np.random.multivariate_normal(np.zeros(Nz), np.identity(Nz), 20))
