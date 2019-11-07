@@ -8,8 +8,9 @@ Created on Sun Nov  3 23:28:28 2019
 import keras
 import numpy as np
 from keras.models import Sequential, Model
-from keras.layers import Dense, Conv2D, UpSampling2D, Flatten, Reshape, Lambda 
+from keras.layers import Dense, Conv2D, UpSampling2D, Flatten, Reshape, Lambda
 from keras.layers import BatchNormalization, Activation, LeakyReLU, Input, Add, Multiply, Concatenate
+from keras.activations import exponential
 from keras.optimizers import Adam
 from keras import backend as K
 
@@ -33,7 +34,7 @@ def generator0(Nphi, Ng, Nz):
     musigma = Dense(2*Ng, input_shape=phi_t.shape)(phi_t)
     musigma = LeakyReLU()(musigma)
     mu0 = Lambda(lambda x: x[:,0:Ng])(musigma)
-    sigma0 = Lambda(lambda x: x[:,Ng:])(musigma)
+    sigma0 = (Lambda(lambda x: x[:,Ng:])(musigma))
     tmp = Multiply()([eps, sigma0])
     c0 = Add()([mu0,tmp])
     
@@ -68,7 +69,7 @@ def generator1(Nphi, Ng, Mg, Nres, imsize):
     musigma = Dense(2*Ng, input_shape=phi_t.shape)(phi_t)
     musigma = LeakyReLU()(musigma)
     mu1 = Lambda(lambda x: x[:,0:Ng])(musigma)
-    sigma1 = Lambda(lambda x: x[:,Ng:])(musigma)
+    sigma1 = (Lambda(lambda x: x[:,Ng:])(musigma))
     tmp = Multiply()([eps, sigma1])
     c1 = Add()([mu1,tmp])
     
@@ -152,7 +153,6 @@ def discriminator(Nphi, Nd, Md, imsize, layerSeq):
     x = BatchNormalization()(x)
     x = Reshape([Md*Md*32])(x)
     x = Dense(1, input_shape=x.shape, activation='sigmoid')(x)
-    
     model = Model(inputs=[phi_t, img], outputs=[x])
     return model
     
@@ -160,6 +160,7 @@ def GAN0(gen, disc, Nphi, Ng, Nz):
     phi_t = Input(shape=(Nphi,))
     eps = Input(shape=(Ng,))
     z = Input(shape=(Nz,))
+    disc.trainable = False
     gen_img, musigma = gen([phi_t, eps, z])
     isValid = disc([phi_t, gen_img])
     model= Model(inputs=[phi_t, eps, z], outputs=[isValid, musigma])
@@ -169,6 +170,7 @@ def GAN1(gen, disc, Nphi, Nd, imsize):
     phi_t = Input(shape=(Nphi,))
     eps = Input(shape=(Ng,))
     x_img = Input(shape=imsize)
+    disc.trainable = False
     gen_img, musigma = gen([phi_t, eps, x_img])
     isValid = disc([phi_t, gen_img])
     model= Model(inputs=[phi_t, eps, x_img], outputs=[isValid, musigma])
@@ -177,7 +179,7 @@ def GAN1(gen, disc, Nphi, Nd, imsize):
 def KL_loss(musigma, y_dummy):
     mu = musigma[:,:Ng]
     sigma = musigma[:,Ng:]
-    loss = -K.log(sigma) + 0.5 * (-1 + K.square(sigma) + K.square(mu))
+    loss = K.log(sigma) + 0.5 * (-1 + K.square(sigma) + K.square(mu))
     loss = K.mean(loss)
     return loss
     
@@ -185,41 +187,51 @@ def KL_loss(musigma, y_dummy):
 dis_optimizer = Adam(lr=0.1, beta_1=0.5, beta_2=0.999)
 gen_optimizer = Adam(lr=0.1, beta_1=0.5, beta_2=0.999)
 gen0 = generator0(Nphi, Ng, Nz)
-gen0.compile(gen_optimizer, loss='binary_crossentropy')
+gen0.compile(gen_optimizer, loss='mse')
 dc0 = discriminator(Nphi, Nd, Md, (64,64,3), [64, 128, 256, 512])
 dc0.compile(dis_optimizer, loss='binary_crossentropy')
 gan0 = GAN0(gen0, dc0, Nphi, Ng, Nz)
-gan0.compile(gen_optimizer, loss=['binary_crossentropy', KL_loss], loss_weights=[1, 1])
+gan0.compile(gen_optimizer, loss=['binary_crossentropy', KL_loss], loss_weights=[1, 1], metrics=None)
 
 '''
 gen1 = generator1(Nphi, Nd, Mg, Nres, (64, 64, 3))
 dc1 = discriminator(Nphi, Nd, Md, (256,256,3), [32, 64, 128, 256, 512, 512])
 gan1 = GAN1(gen1, dc1, Nphi, Md, (64, 64, 3))
 '''
-x_real = K.constant(np.random.randint(0, 255, (10,64,64,3)), dtype='float')
-phi_t = K.constant(np.random.rand(1,Nphi))
 
+x_real = K.constant(np.random.randint(0, 255, (128,64,64,3)), dtype='float')
+phi_t = K.constant(np.random.rand(128,Nphi))
+
+#x_real = np.random.randint(0, 255, (128,64,64,3))
+#x_real = x_real.astype('float')
+#phi_t = np.random.rand(128, Nphi)
+
+batch_size = int(tuple(x_real.shape)[0])
 epochs = 10
 for i in range(epochs):
-    eps = K.constant(np.random.multivariate_normal(np.zeros(Ng), np.identity(Ng), 10))
-    z = K.constant(np.random.multivariate_normal(np.zeros(Nz), np.identity(Nz), 10))
-    gen0.trainable = False
-    dc0.trainable = True
+    batch_size = int(tuple(x_real.shape)[0])
+    d_batch_size = batch_size << 1
+    eps = K.constant(np.random.normal(0, 1, [batch_size, Ng]))
+    z = K.constant(np.random.normal(0, 1, [batch_size, Nz]))
     x_false, musigma = gen0([phi_t, eps, z])
+    #eps = np.random.multivariate_normal(np.zeros(Ng), np.identity(Ng), batch_size)
+    #z = np.random.multivariate_normal(np.zeros(Nz), np.identity(Nz), batch_size)
+    #x_false, musigma = gen0.predict([phi_t, eps, z])
     X = K.concatenate([x_real, x_false], axis = 0)
-    Phi_t = K.concatenate([phi_t for i in range(20)], axis=0)
-    loss = dc0.train_on_batch([Phi_t, X], K.constant([1 for x in range(10)] + [0 for x in range(10)]))
+    Phi_t = K.concatenate([phi_t, phi_t], axis=0)
+    loss = dc0.train_on_batch([Phi_t, X], [K.concatenate([K.ones((batch_size,1)), K.zeros((batch_size,1))], axis=0)])
     print((i+1), loss)
-    gen0.trainable = True
-    dc0.trainable = False
+    #X = np.concatenate([x_real, x_false], axis = 0)
+    #Phi_t = np.concatenate([phi_t, phi_t], axis=0)
+    #dc0.fit([Phi_t, X], [np.concatenate([np.ones((batch_size,1)), np.zeros((batch_size,1))])], d_batch_size)
+    loss = gan0.train_on_batch([Phi_t[:batch_size, :], eps, z], [K.ones((batch_size,1)), K.ones((batch_size,2*Ng))])
+    print((i+1), loss)
     #eps = K.constant(np.random.multivariate_normal(np.zeros(Ng), np.identity(Ng), 20))
     #z = K.constant(np.random.multivariate_normal(np.zeros(Nz), np.identity(Nz), 20))
-    loss = gan0.train_on_batch([Phi_t[:10,:], eps, z], [K.constant([1 for x in range(10)]), K.ones((10, 2*Ng))])
-    print((i+1), loss)
+    #loss = gan0.fit([Phi_t[:batch_size,:], eps, z], [np.ones((batch_size, 1)), np.ones((batch_size, 2*Ng))], batch_size)
     
-y = dc0([Phi_t[:10,:], x_real])
-print(K.get_value(y))
-
+#y = dc0([Phi_t[:batch_size,:], x_real])
+#print(K.get_value(y))
 
 
 
