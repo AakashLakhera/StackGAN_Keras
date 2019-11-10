@@ -7,14 +7,18 @@ Created on Sun Nov  3 23:28:28 2019
 
 import keras
 import numpy as np
-from keras.models import Sequential, Model
+from keras.models import Sequential, Model, load_model
 from keras.layers import Dense, Conv2D, UpSampling2D, Flatten, Reshape, Lambda
 from keras.layers import BatchNormalization, Activation, LeakyReLU, Input, Add, Multiply, Concatenate
 from keras.activations import exponential
 from keras.optimizers import Adam
+import random
 from keras import backend as K
+from loadData import *
+import time
+#import gc
 
-Nphi = 1000
+Nphi = 1024
 Ng = 128
 Nz = 100
 Nd = 128
@@ -22,6 +26,14 @@ Nx = Ng+Nz
 Md = 4
 Mg = 16
 Nres = 4
+batch_size = 64
+epochs = 600
+start_epoch = 0
+learning_rate = 0.0002
+gen_loc = 'Generator0.h5'
+dis_loc = 'Discriminator0.h5'
+random.seed(time.time())
+np.random.seed(int(time.time()+0.5))
 
 def generator0(Nphi, Ng, Nz):
     
@@ -41,12 +53,14 @@ def generator0(Nphi, Ng, Nz):
     
     # Making Generator0 Input
     x = Concatenate(axis=1)([c0, z])
-    x = Reshape([1,1,Nx])(x)
+    x = Dense(4*Nx, input_shape=x.shape)(x)
+    x = Activation('relu')(x)
+    x = Reshape([2,2,Nx])(x)
     
     # Code for Generator0 Model- Upsampling
-    layerSeq0 = [256, 128, 64, 32, 16, 3]
+    layerSeq0 = [512, 256, 128, 64, 3]
     in_channels = Nx
-    sz = 2
+    sz = 1
     for i in range(len(layerSeq0)):
         sz = sz<<i
         t = sz<<1
@@ -76,6 +90,8 @@ def generator1(Nphi, Ng, Mg, Nres, imsize):
     c1 = Add()([mu1,tmp])
     
     # Replicating to Mg x Mg x Ng
+    c1 = Dense(Ng, input_shape=c1.shape)(c1)
+    c1 = Activation('relu')(c1)
     c1 = Reshape([1,1,Ng])(c1)
     c1 = UpSampling2D(input_shape=(1,1,Ng), size=(Mg,Mg))(c1)
     
@@ -104,6 +120,7 @@ def generator1(Nphi, Ng, Mg, Nres, imsize):
         x = Conv2D(in_channels, 3, padding='same', input_shape=(sz,sz,in_channels))(x)
         x = BatchNormalization()(x)
         x = Add()([x, x_shortcut])
+        x = LeakyReLU()(x)
         
     # Code for Generator1 Model- Upsampling
     layerSeq2 = [(512,256), (128, 64), (64, 32), (32,3)] 
@@ -181,17 +198,26 @@ def GAN1(gen, disc, Nphi, Nd, imsize):
 def KL_loss(y_dummy, musigma):
     mu = musigma[:,:Ng]
     logsigma = musigma[:,Ng:]
-    loss = logsigma + 0.5 * (-1 + K.exp(2*logsigma) + K.square(mu))
+    loss = -logsigma + 0.5 * (-1 + K.exp(2*logsigma) + K.square(mu))
     loss = K.mean(loss)
     return loss
     
 
-dis_optimizer = Adam(lr=0.0002, beta_1=0.5)
-gen_optimizer = Adam(lr=0.0002, beta_1=0.5)
+dis_optimizer = Adam(lr=learning_rate, beta_1=0.5)
+gen_optimizer = Adam(lr=learning_rate, beta_1=0.5)
 gen0 = generator0(Nphi, Ng, Nz)
-#gen0.compile(gen_optimizer, loss='mse')
+
+try:
+    gen0.load_weights(gen_loc)
+except:
+    print('No Generator File Detected!')
 dc0 = discriminator(Nphi, Nd, Md, (64,64,3), [64, 128, 256, 512])
-dc0.compile(dis_optimizer, loss='binary_crossentropy')
+try:
+    dc0.load_weights(dis_loc)
+except:
+    print('No Discriminator File Detected!')
+
+dc0.compile(dis_optimizer, loss=['binary_crossentropy'], loss_weights=[2])
 gan0 = GAN0(gen0, dc0, Nphi, Ng, Nz)
 gan0.compile(gen_optimizer, loss=['binary_crossentropy', KL_loss], loss_weights=[1,1], metrics=None)
 
@@ -201,6 +227,57 @@ dc1 = discriminator(Nphi, Nd, Md, (256,256,3), [32, 64, 128, 256, 512, 512])
 gan1 = GAN1(gen1, dc1, Nphi, Md, (64, 64, 3))
 '''
 
+X_real, Emb = load_dataset('birds/train/', 'CUB_200_2011/', 64)
+print(Emb.shape, X_real.shape)
+
+lenX = X_real.shape[0]
+iterations = 1+(lenX//batch_size)
+print('Starting to Train')
+for i in range(start_epoch, epochs):
+    rand_shuffle = np.arange(lenX)
+    np.random.shuffle(rand_shuffle)
+    X_real = X_real[rand_shuffle]
+    Emb = Emb[rand_shuffle]
+    d_loss = 0
+    g_loss = [0, 0, 0]
+    for j in range(iterations):
+        i1 = j*batch_size
+        i2 = i1 + batch_size
+        x_real = X_real[i1:i2,:,:]
+        phi_t = Emb[i1:i2,random.randint(0, Emb.shape[1]-1),:]
+        curr_size = int(tuple(x_real.shape)[0])
+        di_size = curr_size<<1
+        musigma_dummy = np.ones((curr_size,2*Ng))
+        real_labels = np.ones((curr_size,1))
+        false_labels = np.zeros((curr_size,1))
+        
+        eps = np.random.normal(0, 1, [curr_size, Ng])
+        z = np.random.normal(0, 1, [curr_size, Nz])
+        x_false, musigma = gen0.predict([phi_t, eps, z])
+        
+        X = np.concatenate([x_real, x_false], axis = 0)
+        Phi_t = np.concatenate([phi_t, phi_t], axis=0)
+        d_loss += dc0.train_on_batch([Phi_t, X], [np.concatenate([real_labels, false_labels], axis=0)])
+        
+        _, musigma =  gan0.predict([phi_t, eps, z])
+        loss = gan0.train_on_batch([phi_t, eps, z], [real_labels, musigma_dummy])
+        for k in range(len(loss)):
+            g_loss[k] += loss[k]
+        
+        
+        if ((j+1) % 30 == 0) or ((j+1) == iterations):
+            print((i+1), (j+1), d_loss, g_loss)
+            d_loss = 0
+            g_loss = [0, 0, 0]
+            #print('Memory Recollected-',gc.collect())
+    
+    gen0.save_weights(gen_loc)
+    dc0.save_weights(dis_loc)
+    if (i+1)%100 == 0:
+        K.set_value(dc0.optimizer.lr, learning_rate/2)
+        K.set_value(gan0.optimizer.lr, learning_rate/2)
+
+'''
 x_real = K.constant(np.random.randint(0, 255, (128,64,64,3)), dtype='float')
 phi_t = K.constant(np.random.rand(128,Nphi))
 
@@ -240,7 +317,7 @@ for i in range(epochs):
     
 #y = dc0([Phi_t[:batch_size,:], x_real])
 #print(K.get_value(y))
-
+'''
 
 
 
