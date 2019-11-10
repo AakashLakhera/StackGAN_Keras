@@ -58,9 +58,9 @@ def generator0(Nphi, Ng, Nz):
     x = Reshape([2,2,Nx])(x)
     
     # Code for Generator0 Model- Upsampling
-    layerSeq0 = [512, 256, 128, 64, 3]
+    layerSeq0 = [256, 128, 64, 32, 3]
     in_channels = Nx
-    sz = 1
+    sz = 2
     for i in range(len(layerSeq0)):
         sz = sz<<i
         t = sz<<1
@@ -202,7 +202,8 @@ def KL_loss(y_dummy, musigma):
     loss = K.mean(loss)
     return loss
     
-
+m = start_epoch//100
+learning_rate = 0.0002/(1<<m)
 dis_optimizer = Adam(lr=learning_rate, beta_1=0.5)
 gen_optimizer = Adam(lr=learning_rate, beta_1=0.5)
 gen0 = generator0(Nphi, Ng, Nz)
@@ -217,7 +218,7 @@ try:
 except:
     print('No Discriminator File Detected!')
 
-dc0.compile(dis_optimizer, loss=['binary_crossentropy'], loss_weights=[2])
+dc0.compile(dis_optimizer, loss=['binary_crossentropy'])
 gan0 = GAN0(gen0, dc0, Nphi, Ng, Nz)
 gan0.compile(gen_optimizer, loss=['binary_crossentropy', KL_loss], loss_weights=[1,1], metrics=None)
 
@@ -228,11 +229,13 @@ gan1 = GAN1(gen1, dc1, Nphi, Md, (64, 64, 3))
 '''
 
 X_real, Emb = load_dataset('birds/train/', 'CUB_200_2011/', 64)
-print(Emb.shape, X_real.shape)
+print('Embeddings:', Emb.shape,'CUB Dataset:', X_real.shape)
 
 lenX = X_real.shape[0]
 iterations = 1+(lenX//batch_size)
+
 print('Starting to Train')
+print('The Learning Rate Now is:', K.get_value(dc0.optimizer.lr))
 for i in range(start_epoch, epochs):
     rand_shuffle = np.arange(lenX)
     np.random.shuffle(rand_shuffle)
@@ -245,19 +248,38 @@ for i in range(start_epoch, epochs):
         i2 = i1 + batch_size
         x_real = X_real[i1:i2,:,:]
         phi_t = Emb[i1:i2,random.randint(0, Emb.shape[1]-1),:]
+        
         curr_size = int(tuple(x_real.shape)[0])
-        di_size = curr_size<<1
+        d_size = curr_size<<1
         musigma_dummy = np.ones((curr_size,2*Ng))
         real_labels = np.ones((curr_size,1))
         false_labels = np.zeros((curr_size,1))
+        
+        # Now, get some wrong images
+        i3 = (i2 + batch_size)
+        if i2 >= lenX or i3 >lenX:
+            i2 = 0
+            i3 = curr_size    
+        x_wrong = X_real[i2:i3,:,:]
+        wrong_labels = np.zeros((curr_size,1))
         
         eps = np.random.normal(0, 1, [curr_size, Ng])
         z = np.random.normal(0, 1, [curr_size, Nz])
         x_false, musigma = gen0.predict([phi_t, eps, z])
         
-        X = np.concatenate([x_real, x_false], axis = 0)
-        Phi_t = np.concatenate([phi_t, phi_t], axis=0)
-        d_loss += dc0.train_on_batch([Phi_t, X], [np.concatenate([real_labels, false_labels], axis=0)])
+        X = np.concatenate([x_real, x_wrong, x_false, ], axis = 0)
+        Phi_t = np.concatenate([phi_t, phi_t, phi_t], axis=0)
+        Labels = np.concatenate([real_labels, wrong_labels, false_labels], axis=0)
+        
+        shuff = np.arange(3*curr_size)
+        np.random.shuffle(shuff)
+        X = X[shuff]
+        Phi_t = Phi_t[shuff]
+        Labels = Labels[shuff]
+        
+        d_loss += dc0.train_on_batch([Phi_t[0:curr_size], X[0:curr_size]], [Labels[0:curr_size]])
+        d_loss += dc0.train_on_batch([Phi_t[curr_size:d_size], X[curr_size:d_size]], [Labels[curr_size:d_size]])
+        d_loss += dc0.train_on_batch([Phi_t[d_size:], X[d_size:]], [Labels[d_size:]])
         
         _, musigma =  gan0.predict([phi_t, eps, z])
         loss = gan0.train_on_batch([phi_t, eps, z], [real_labels, musigma_dummy])
@@ -274,8 +296,11 @@ for i in range(start_epoch, epochs):
     gen0.save_weights(gen_loc)
     dc0.save_weights(dis_loc)
     if (i+1)%100 == 0:
-        K.set_value(dc0.optimizer.lr, learning_rate/2)
-        K.set_value(gan0.optimizer.lr, learning_rate/2)
+        learning_rate /= 2
+        K.set_value(dc0.optimizer.lr, learning_rate)
+        K.set_value(gan0.optimizer.lr, learning_rate)
+        print('The Learning Rate Now is:', K.get_value(dc0.optimizer.lr))
+        
 
 '''
 x_real = K.constant(np.random.randint(0, 255, (128,64,64,3)), dtype='float')
