@@ -21,7 +21,7 @@ Mg = 16
 Nres = 4
 batch_size = 16
 epochs = 600
-start_epoch = 0
+start_epoch = 525
 learning_rate = 0.0002
 gen0_loc = 'Generator0.h5'
 gen_loc = 'Generator1.h5'
@@ -51,7 +51,7 @@ except:
 
 gen1 = generator1(Nphi, Ng, Mg, Nres, (64, 64, 3))
 try:
-    gen1 = gen1.load_weights(gen_loc)
+    gen1.load_weights(gen_loc)
 except:
     print('No Generator File Detected!')
     
@@ -65,6 +65,7 @@ dc1.compile(dis_optimizer, loss=['binary_crossentropy'])
 gan1 = GAN1(gen1, dc1, Nphi, Nd, (64,64,3))
 gan1.compile(gen_optimizer, loss=['binary_crossentropy', KL_loss], loss_weights=[1,1], metrics=None)
 
+print('Loading Dataset...')
 X_real, Emb = load_dataset('birds/train/', 'CUB_200_2011/', 256)
 print('Embeddings:', Emb.shape,'CUB Dataset:', X_real.shape)
 
@@ -106,15 +107,15 @@ for i in range(start_epoch, epochs):
         eps = np.random.normal(0, 1, [curr_size, Ng])
         x_false, musigma = gen1.predict([phi_t, eps, x_img])
         
-        X = np.concatenate([x_real, x_wrong, x_false], axis = 0)
+        X = np.concatenate([x_real, x_false, x_wrong], axis = 0)
         Phi_t = np.concatenate([phi_t, phi_t, phi_t], axis=0)
-        Labels = np.concatenate([real_labels, wrong_labels, false_labels], axis=0)
+        Labels = np.concatenate([real_labels, false_labels, wrong_labels], axis=0)
         
-        shuff = np.arange(3*curr_size)
-        np.random.shuffle(shuff)
-        X = X[shuff]
-        Phi_t = Phi_t[shuff]
-        Labels = Labels[shuff]
+        #shuff = np.arange(3*curr_size)
+        #np.random.shuffle(shuff)
+        #X = X[shuff]
+        #Phi_t = Phi_t[shuff]
+        #Labels = Labels[shuff]
         
         d_loss += dc1.train_on_batch([Phi_t[0:curr_size], X[0:curr_size]], [Labels[0:curr_size]])
         d_loss += dc1.train_on_batch([Phi_t[curr_size:d_size], X[curr_size:d_size]], [Labels[curr_size:d_size]])
@@ -125,7 +126,7 @@ for i in range(start_epoch, epochs):
             g_loss[k] += loss[k]
         
         if ((j+1) % 60 == 0) or ((j+1) == iterations):
-            print((i+1), (j+1), d_loss, g_loss)
+            print((i+1), (j+1), d_loss/60, g_loss/60)
             d_loss = 0
             g_loss = [0, 0, 0]
     

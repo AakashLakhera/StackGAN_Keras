@@ -20,11 +20,11 @@ Md = 4
 Mg = 16
 Nres = 4
 batch_size = 64
-epochs = 600
+epochs = 300
 start_epoch = 0
 learning_rate = 0.0002
-gen_loc = 'Generator0.h5'
-dis_loc = 'Discriminator0.h5'
+gen_loc = 'Generator0_2.h5'
+dis_loc = 'Discriminator0_2.h5'
 random.seed(time.time())
 np.random.seed(int(time.time()+0.5))
 
@@ -57,12 +57,7 @@ dc0.compile(dis_optimizer, loss=['binary_crossentropy'])
 gan0 = GAN0(gen0, dc0, Nphi, Ng, Nz)
 gan0.compile(gen_optimizer, loss=['binary_crossentropy', KL_loss], loss_weights=[1,1], metrics=None)
 
-'''
-gen1 = generator1(Nphi, Nd, Mg, Nres, (64, 64, 3))
-dc1 = discriminator(Nphi, Nd, Md, (256,256,3), [32, 64, 128, 256, 512, 512])
-gan1 = GAN1(gen1, dc1, Nphi, Md, (64, 64, 3))
-'''
-
+print('Loading Dataset...')
 X_real, Emb = load_dataset('birds/train/', 'CUB_200_2011/', 64)
 print('Embeddings:', Emb.shape,'CUB Dataset:', X_real.shape)
 
@@ -102,15 +97,15 @@ for i in range(start_epoch, epochs):
         z = np.random.normal(0, 1, [curr_size, Nz])
         x_false, musigma = gen0.predict([phi_t, eps, z])
         
-        X = np.concatenate([x_real, x_wrong, x_false], axis = 0)
+        X = np.concatenate([x_real, x_false, x_wrong], axis = 0)
         Phi_t = np.concatenate([phi_t, phi_t, phi_t], axis=0)
-        Labels = np.concatenate([real_labels, wrong_labels, false_labels], axis=0)
+        Labels = np.concatenate([real_labels, false_labels, wrong_labels], axis=0)
         
-        shuff = np.arange(3*curr_size)
-        np.random.shuffle(shuff)
-        X = X[shuff]
-        Phi_t = Phi_t[shuff]
-        Labels = Labels[shuff]
+        #shuff = np.arange(3*curr_size)
+        #np.random.shuffle(shuff)
+        #X = X[shuff]
+        #Phi_t = Phi_t[shuff]
+        #Labels = Labels[shuff]
         
         d_loss += dc0.train_on_batch([Phi_t[0:curr_size], X[0:curr_size]], [Labels[0:curr_size]])
         d_loss += dc0.train_on_batch([Phi_t[curr_size:d_size], X[curr_size:d_size]], [Labels[curr_size:d_size]])
@@ -122,7 +117,7 @@ for i in range(start_epoch, epochs):
         
         
         if ((j+1) % 30 == 0) or ((j+1) == iterations):
-            print((i+1), (j+1), d_loss, g_loss)
+            print((i+1), (j+1), d_loss/30, g_loss/30)
             d_loss = 0
             g_loss = [0, 0, 0]
             #print('Memory Recollected-',gc.collect())
