@@ -67,6 +67,7 @@ gan1.compile(gen_optimizer, loss=['binary_crossentropy', KL_loss], loss_weights=
 
 print('Loading Dataset...')
 X_real, Emb = load_dataset('birds/train/', 'CUB_200_2011/', 256)
+X_real = (X_real-127.5)/127.5
 print('Embeddings:', Emb.shape,'CUB Dataset:', X_real.shape)
 
 lenX = X_real.shape[0]
@@ -126,7 +127,7 @@ for i in range(start_epoch, epochs):
             g_loss[k] += loss[k]
         
         if ((j+1) % 60 == 0) or ((j+1) == iterations):
-            print((i+1), (j+1), d_loss/60, g_loss/60)
+            print((i+1), (j+1), d_loss, g_loss)
             d_loss = 0
             g_loss = [0, 0, 0]
     
