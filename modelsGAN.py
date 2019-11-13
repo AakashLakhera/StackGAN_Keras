@@ -49,6 +49,7 @@ def generator0(Nphi, Ng, Nz):
             x = BatchNormalization()(x)
             x = Activation('relu')(x)
         in_channels = out_channels
+    x = Activation('tanh')(x)
     model = Model(inputs = [phi_t, eps, z], outputs = [x, musigma])
     return model
 
@@ -116,7 +117,7 @@ def generator1(Nphi, Ng, Mg, Nres, imsize):
             x = BatchNormalization()(x)
             x = Activation('relu')(x)
         in_channels = out_channels
-    
+    x = Activation('tanh')(x)
     model = Model(inputs = [phi_t, eps, x_img], outputs = [x, musigma])
     return model
 

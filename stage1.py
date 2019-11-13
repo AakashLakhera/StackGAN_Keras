@@ -10,6 +10,7 @@ import numpy as np
 import time
 from loadData import *
 from modelsGAN import *
+import cv2
 
 Nphi = 1024
 Ng = 128
@@ -20,11 +21,11 @@ Md = 4
 Mg = 16
 Nres = 4
 batch_size = 64
-epochs = 300
+epochs = 600
 start_epoch = 0
 learning_rate = 0.0002
-gen_loc = 'Generator0_2.h5'
-dis_loc = 'Discriminator0_2.h5'
+gen_loc = 'Generator0_3.h5'
+dis_loc = 'Discriminator0_3.h5'
 random.seed(time.time())
 np.random.seed(int(time.time()+0.5))
 
@@ -60,6 +61,8 @@ gan0.compile(gen_optimizer, loss=['binary_crossentropy', KL_loss], loss_weights=
 print('Loading Dataset...')
 X_real, Emb = load_dataset('birds/train/', 'CUB_200_2011/', 64)
 X_real = (X_real-127.5)/127.5
+
+testEmb, c_, d_ = extract_aux_info('birds/test/')
 print('Embeddings:', Emb.shape,'CUB Dataset:', X_real.shape)
 
 lenX = X_real.shape[0]
@@ -130,6 +133,13 @@ for i in range(start_epoch, epochs):
         K.set_value(dc0.optimizer.lr, learning_rate)
         K.set_value(gan0.optimizer.lr, learning_rate)
         print('The Learning Rate Now is:', K.get_value(dc0.optimizer.lr))
+        emb = testEmb[:,random.randint(0, testEmb.shape[1]-1),:]
+        eps = np.random.normal(0, 1, [testEmb.shape[0], Ng])
+        z = np.random.normal(0, 1, [testEmb.shape[0], Nz])
+        x_test, _ = gen0.predict([emb, eps, z])
+        x_test = 127.5*(x_test + 1)
+        for k in range(x_test.shape[0]):
+            cv2.imwrite('ResultsI\\'+str(k)+'.jpg', x_test[k])
         
 
 
