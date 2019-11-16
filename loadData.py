@@ -1,8 +1,9 @@
-'''
+# -*- coding: utf-8 -*-
+"""
+Created on Sat Nov  9 09:41:09 2019
 
-@author = Aabhaas
-
-'''
+@author: Aakash
+"""
 
 import pickle
 import numpy as np
@@ -29,17 +30,6 @@ def extract_aux_info(path):
 	return embeddings, class_info, filenames
 	
 	
-def get_text(path, filename):
-    '''
-    Obtains the input text value.
-    '''
-    path = path[:-6]
-    f = open(path + 'text_c10/' + filename + '.txt', 'r')
-    texts0 = f.readlines()
-    f.close()
-    texts = [i.strip() for i in texts0]
-    return texts
-
 def create_bbox_map(path):
     ''' Creates Bounding Box Mapping for each image.
     '''
@@ -77,28 +67,32 @@ def get_cropped_img(image_path, bbox, size):
     final_img = pt_img.resize((size,size), Image.BICUBIC)
     
     return final_img
+
+def get_text(path, filename):
+    '''
+    Obtains the input text value.
+    '''
+    path = path[:-6]
+    f = open(path + 'text_c10/' + filename + '.txt', 'r')
+    texts0 = f.readlines()
+    f.close()
+    texts = [i.strip() for i in texts0]
+    return texts
 	
-def load_dataset(aux_info_filepath, cub_dataset_filepath, image_size):
+def load_dataset(aux_info_filepath, cub_dataset_filepath, image_size, wantText=False):
 	
     embeddings, class_info, filenames = extract_aux_info(aux_info_filepath)
     bbox_map = create_bbox_map(cub_dataset_filepath)
-	
-    #print(embeddings.shape)
 	
     #Images
     X = []
 	#Class Info
     #y = []
-	
 	#Embeddings
     emb = []
-    
-    #Texts
-    tex = []
-	
 	#Epoch Shuffle
 	#np.random.shuffle(filenames)
-	
+    tex = []
     for index,filename in enumerate(filenames):
         #print("Processing image", index+1)
         img_path = cub_dataset_filepath + '/images/' + filename + '.jpg'
@@ -107,12 +101,8 @@ def load_dataset(aux_info_filepath, cub_dataset_filepath, image_size):
         X.append(np.array(proc_img))
         #y.append(np.array(class_info[index]))
         emb.append(np.array(embeddings[index, :, :]))
-        t = get_text(aux_info_filepath, filename)
-        tex.append(t)
-    
-    print(tex)
-    print(emb)
-    return np.array(X), np.array(emb)
-
-a,b = load_dataset('/home/aabhaas/Desktop/NNFL_project/birds/train/', '/home/aabhaas/Desktop/NNFL_project/CUB_200_2011/', 256)
-#End
+        if wantText:
+            t = get_text(aux_info_filepath, filename)
+            tex.append(t)
+         
+    return np.array(X), np.array(emb), tex

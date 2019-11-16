@@ -53,6 +53,46 @@ def generator0(Nphi, Ng, Nz):
     model = Model(inputs = [phi_t, eps, z], outputs = [x, musigma])
     return model
 
+def generator0_2(Nphi, Ng, Nz):
+    
+    Nx = Ng+Nz
+    phi_t = Input(shape=(Nphi,))
+    eps = Input(shape=(Ng,))
+    z = Input(shape=(Nz,))
+    
+    # Conditioning Augmentation
+    musigma = Dense(2*Ng, input_shape=phi_t.shape)(phi_t)
+    musigma = LeakyReLU()(musigma)
+    mu0 = Lambda(lambda x: x[:,0:Ng])(musigma)
+    sigma0 = (Lambda(lambda x: x[:,Ng:])(musigma)) #logsigma
+    sigma0 = Activation('exponential')(sigma0)
+    tmp = Multiply()([eps, sigma0])
+    c0 = Add()([mu0,tmp])
+    
+    # Making Generator0 Input
+    x = Concatenate(axis=1)([c0, z])
+    x = Dense(4*4*4*Nx, input_shape=x.shape)(x)
+    x = Activation('relu')(x)
+    x = Reshape([4,4,4*Nx])(x)
+    
+    # Code for Generator0 Model- Upsampling
+    layerSeq0 = [512, 256, 128, 64]
+    in_channels = Nx
+    sz = 2
+    for i in range(len(layerSeq0)):
+        sz = sz<<i
+        t = sz<<1
+        out_channels = layerSeq0[i]
+        x = UpSampling2D(input_shape=(sz,sz,in_channels))(x)
+        x = Conv2D(out_channels, 3, padding='same', input_shape=(t,t,in_channels))(x)
+        x = BatchNormalization()(x)
+        x = Activation('relu')(x)
+        in_channels = out_channels
+    x = Conv2D(3, 3, padding='same', input_shape=(t,t,in_channels))(x)
+    x = Activation('tanh')(x)
+    model = Model(inputs = [phi_t, eps, z], outputs = [x, musigma])
+    return model
+
 def generator1(Nphi, Ng, Mg, Nres, imsize):
     
     phi_t = Input(shape=(Nphi,))
