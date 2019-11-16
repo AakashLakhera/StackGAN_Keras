@@ -1,9 +1,8 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Sat Nov  9 09:41:09 2019
+'''
 
-@author: Aakash
-"""
+@author = Aabhaas
+
+'''
 
 import pickle
 import numpy as np
@@ -30,6 +29,17 @@ def extract_aux_info(path):
 	return embeddings, class_info, filenames
 	
 	
+def get_text(path, filename):
+    '''
+    Obtains the input text value.
+    '''
+    path = path[:-6]
+    f = open(path + 'text_c10/' + filename + '.txt', 'r')
+    texts0 = f.readlines()
+    f.close()
+    texts = [i.strip() for i in texts0]
+    return texts
+
 def create_bbox_map(path):
     ''' Creates Bounding Box Mapping for each image.
     '''
@@ -82,6 +92,9 @@ def load_dataset(aux_info_filepath, cub_dataset_filepath, image_size):
 	
 	#Embeddings
     emb = []
+    
+    #Texts
+    tex = []
 	
 	#Epoch Shuffle
 	#np.random.shuffle(filenames)
@@ -94,11 +107,12 @@ def load_dataset(aux_info_filepath, cub_dataset_filepath, image_size):
         X.append(np.array(proc_img))
         #y.append(np.array(class_info[index]))
         emb.append(np.array(embeddings[index, :, :]))
-	
+        t = get_text(aux_info_filepath, filename)
+        tex.append(t)
+    
+    print(tex)
+    print(emb)
     return np.array(X), np.array(emb)
 
-
-
-
-#alpha = get_cropped_img(str1, bbox_map['200.Common_Yellowthroat/Common_Yellowthroat_0009_190578.jpg'], 300)
-#load_dataset('/home/aabhaas/Desktop/NNFL_project/birds/train/', '/home/aabhaas/Desktop/NNFL_project/CUB_200_2011/', 256)
+a,b = load_dataset('/home/aabhaas/Desktop/NNFL_project/birds/train/', '/home/aabhaas/Desktop/NNFL_project/CUB_200_2011/', 256)
+#End
