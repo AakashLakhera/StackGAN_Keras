@@ -25,9 +25,9 @@ batch_size = 16
 epochs = 600
 start_epoch = 0
 learning_rate = 0.0002
-gen0_loc = 'Generator0_4.h5'
-gen_loc = 'Generator1.h5'
-dis_loc = 'Discriminator1.h5'
+gen0_loc = 'Generator0_5_2.h5'
+gen_loc = 'Generator1_5.h5'
+dis_loc = 'Discriminator1_5.h5'
 random.seed(time.time())
 np.random.seed(int(time.time()+0.5))
   
@@ -44,7 +44,7 @@ learning_rate = 0.0002/(1<<m)
 dis_optimizer = Adam(lr=learning_rate, beta_1=0.5)
 gen_optimizer = Adam(lr=learning_rate, beta_1=0.5)
 
-gen0 = generator0(Nphi, Ng, Nz)
+gen0 = generator0_2(Nphi, Ng, Nz)
 try:
     gen0.load_weights(gen0_loc)
 except:
@@ -74,6 +74,9 @@ print('Embeddings:', Emb.shape,'CUB Dataset:', X_real.shape)
 
 lenX = X_real.shape[0]
 iterations = 1+(lenX//batch_size)
+Phi_t = np.zeros((lenX, Nphi))
+for i in range(lenX):
+    Phi_t[i] += Emb[i,random.randint(0, Emb.shape[1]-1),:]
 
 print('Starting to Train')
 print('The Learning Rate Now is:', K.get_value(dc1.optimizer.lr))
@@ -89,7 +92,7 @@ for i in range(start_epoch, epochs):
         i2 = i1 + batch_size
         x_real = X_real[i1:i2,:,:]
         x_real = (x_real/127.5) - 1
-        phi_t = Emb[i1:i2,random.randint(0, Emb.shape[1]-1),:]
+        phi_t = Phi_t[i1:i2,:]
         
         curr_size = int(tuple(x_real.shape)[0])
         d_size = curr_size<<1
@@ -112,7 +115,6 @@ for i in range(start_epoch, epochs):
         x_false, musigma = gen1.predict([phi_t, eps, x_img])
         
         X = np.concatenate([x_real, x_false, x_wrong], axis = 0)
-        Phi_t = np.concatenate([phi_t, phi_t, phi_t], axis=0)
         Labels = np.concatenate([real_labels, false_labels, wrong_labels], axis=0)
         
         #shuff = np.arange(3*curr_size)
@@ -121,9 +123,9 @@ for i in range(start_epoch, epochs):
         #Phi_t = Phi_t[shuff]
         #Labels = Labels[shuff]
         
-        d_loss += dc1.train_on_batch([Phi_t[0:curr_size], X[0:curr_size]], [Labels[0:curr_size]])
-        d_loss += dc1.train_on_batch([Phi_t[curr_size:d_size], X[curr_size:d_size]], [Labels[curr_size:d_size]])
-        d_loss += dc1.train_on_batch([Phi_t[d_size:], X[d_size:]], [Labels[d_size:]])
+        d_loss += dc1.train_on_batch([phi_t, X[0:curr_size]], [Labels[0:curr_size]])
+        d_loss += dc1.train_on_batch([phi_t, X[curr_size:d_size]], [Labels[curr_size:d_size]])
+        d_loss += dc1.train_on_batch([phi_t, X[d_size:]], [Labels[d_size:]])
         
         loss = gan1.train_on_batch([phi_t, eps, x_img], [real_labels, musigma_dummy])
         for k in range(len(loss)):
@@ -144,7 +146,7 @@ for i in range(start_epoch, epochs):
         K.set_value(dc1.optimizer.lr, learning_rate)
         K.set_value(gan1.optimizer.lr, learning_rate)
         print('The Learning Rate Now is:', K.get_value(dc1.optimizer.lr))
-    if (i+1)%50 == 0:
+    if (i+1)%10 == 0:
         b = testEmb.shape[0]
         emb = testEmb[:b,random.randint(0, testEmb.shape[1]-1),:]
         eps = np.random.normal(0, 1, [testEmb.shape[0], Ng])
